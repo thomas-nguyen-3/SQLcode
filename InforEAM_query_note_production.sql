@@ -1,0 +1,596 @@
+--## QUERY CHECKING ##-
+--CHECK POS .. IF '+" CHANGE "COVERAGE" TO CONTRACT
+SELECT * from R5OBJECTS WHERE OBJ_UDFCHKBOX01 != '-';
+
+--CHECK ON EUPDATE (CODE SEE CODE BELOW)
+
+--## update the PM WO with status "finished' (FIN) since it will be a resease status. 
+--## goal: prevent this from show up as duplicate for Pm WO
+--CHECK QUERY:
+select * from r5events where evt_type = 'PPM' and evt_status = 'FIN' order by evt_date desc;
+
+select evt_code,evt_desc,evt_type,evt_status, evt_completed from r5events where evt_type = 'PPM' and evt_status = 'FIN' order by evt_date desc;
+
+-- update statement
+UPDATE EAM.R5EVENTS
+SET evt_status = 'CPM'
+WHERE evt_type = 'PPM' and evt_status = 'FIN' ;
+
+--UPDATE STATMENT TO UPDATE OPERATING TIME MF, SA, SU OF ASSET
+UPDATE EAM.R5OBJECTS
+SET OBJ_VARIABLE3 = '0730 - 1800' , OBJ_VARIABLE4 = 'X' , OBJ_VARIABLE5 = 'X'WHERE OBJ_CODE = 'WS-CT-GE-08';
+
+--## update the Risk Level to blank (it is SVCLEVEL in r5propertyvalues... 
+--checking query:
+SELECT * FROM R5PROPERTYVALUES WHERE PRV_RENTITY = 'OBJ' AND prv_property ='SVCLEVEL' ORDER BY PRV_CREATED DESC;
+
+-- update statement
+UPDATE EAM.R5PROPERTYVALUES
+SET PRV_VALUE = NULL
+WHERE PRV_RENTITY = 'OBJ' AND prv_property ='SVCLEVEL';
+
+
+-- list annual cost for Fuji Cost Center (then later GE and HOLOGIC cost center)
+SELECT 
+O.OBJ_CODE Equipment,
+r5o7.o7get_desc('EN','UCOD', o.obj_status,'OBST', '') Asset_Status,
+obj_costcode Cost_Center,
+O.OBJ_DESC Equipment_Description,
+obj_serialno Serial_Number,
+OBJ_UDFNUM01 C_Annual_$,
+SQL_160.prv_value OEM
+from r5objects o,  r5propertyvalues SQL_160 
+where o.obj_obrtype ='A' and O.OBJ_STATUS <> 'EO' and O.OBJ_STATUS <> 'RET' and
+obj_code||'#'||obj_org=SQL_160.prv_code(+) and (SQL_160.prv_rentity(+) = 'OBJ') and (SQL_160.prv_property(+)='OEM')and
+r5o7.o7get_desc('EN','UCOD', o.obj_status,'OBST', '') = 'Active' and
+SQL_160.prv_property = 'OEM' and SQL_160.prv_value = 'FUJI';
+
+
+
+-- TEST ON THIS ONE OK ... UPDATE THESE WO 59252, 62134,  ***THIS 2 DOES NOT WORK (CAN'T ADD CUSTOME FIELD) !! 61768, 61573, 
+--6/1/2016   wo 62216 , 62217
+DECLARE
+--ADD THE WO NUMBER HERE ABER THE :=
+WOCODE R5EVENTS.EVT_CODE%TYPE := '59252';
+WOOBJECT R5EVENTS.EVT_OBJECT%TYPE;
+TIME_REPORTED EAM.R5EVENTS.EVT_REPORTED%TYPE;
+
+SITE_ID 	R5OBJECTS.OBJ_MANUFACTMODEL%TYPE;
+SA_HRS 	R5OBJECTS.OBJ_VARIABLE4%TYPE;
+SU_HRS 	R5OBJECTS.OBJ_VARIABLE5%TYPE;
+VENDOR 	R5OBJECTS.OBJ_MANUFACT%TYPE;
+MODALITY 	R5OBJECTS.OBJ_CLASS%TYPE;
+WKHRS 	R5OBJECTS.OBJ_VARIABLE6%TYPE;
+MF_HRS 	R5OBJECTS.OBJ_VARIABLE3%TYPE;
+CHRSMF 	R5OBJECTS.OBJ_UDFCHAR01%TYPE;
+ROOM 			R5PROPERTYVALUES.PRV_VALUE%TYPE;
+ANAME 		R5PROPERTYVALUES.PRV_VALUE%TYPE;
+OEM 			R5PROPERTYVALUES.PRV_VALUE%TYPE;
+DNAME 		R5PROPERTYVALUES.PRV_VALUE%TYPE;
+CLINIC_AREA 	R5PROPERTYVALUES.PRV_VALUE%TYPE;
+FLOOR1 		R5PROPERTYVALUES.PRV_VALUE%TYPE;
+
+BEGIN
+--get the equipment name (EVT_OBJECT) from the R5EVENTS table given WO number
+SELECT EVT_REPORTED, EVT_OBJECT INTO TIME_REPORTED, WOOBJECT FROM R5EVENTS WHERE EVT_CODE = WOCODE;
+--get the non-custom field values
+SELECT OBJ_MANUFACTMODEL, OBJ_VARIABLE4, OBJ_VARIABLE5,  OBJ_MANUFACT, OBJ_CLASS, OBJ_VARIABLE6, OBJ_VARIABLE3, OBJ_UDFCHAR01
+	INTO SITE_ID, SA_HRS, SU_HRS, VENDOR, MODALITY, WKHRS, MF_HRS, CHRSMF FROM R5OBJECTS WHERE OBJ_CODE=WOOBJECT;
+--get the custom field value
+SELECT PRV_VALUE INTO ROOM 		FROM R5PROPERTYVALUES WHERE PRV_CODE=WOOBJECT||'#*' AND PRV_RENTITY='OBJ' AND PRV_PROPERTY='ROOMNAME';
+SELECT PRV_VALUE INTO ANAME		FROM R5PROPERTYVALUES WHERE PRV_CODE=WOOBJECT||'#*' AND PRV_RENTITY='OBJ' AND PRV_PROPERTY='ASSETNAM';
+SELECT PRV_VALUE INTO OEM			FROM R5PROPERTYVALUES WHERE PRV_CODE=WOOBJECT||'#*' AND PRV_RENTITY='OBJ' AND PRV_PROPERTY='OEM';
+SELECT PRV_VALUE INTO DNAME		FROM R5PROPERTYVALUES WHERE PRV_CODE=WOOBJECT||'#*' AND PRV_RENTITY='OBJ' AND PRV_PROPERTY='DOMAIN';
+SELECT PRV_VALUE INTO CLINIC_AREA	FROM R5PROPERTYVALUES WHERE PRV_CODE=WOOBJECT||'#*' AND PRV_RENTITY='OBJ' AND PRV_PROPERTY='CLINIC';
+SELECT PRV_VALUE INTO FLOOR1		FROM R5PROPERTYVALUES WHERE PRV_CODE=WOOBJECT||'#*' AND PRV_RENTITY='OBJ' AND PRV_PROPERTY='FLOOR';
+
+IF 
+SITE_ID  		IS NOT NULL AND SA_HRS	IS NOT NULL AND SU_HRS  		IS NOT NULL AND VENDOR	IS NOT NULL AND MODALITY	IS NOT NULL 
+AND WKHRS   	IS NOT NULL AND MF_HRS  	IS NOT NULL AND CHRSMF      	IS NOT NULL AND ROOM      	IS NOT NULL AND ANAME 	IS NOT NULL 
+AND OEM     	IS NOT NULL AND DNAME   	IS NOT NULL AND CLINIC_AREA 	IS NOT NULL AND FLOOR1    	IS NOT NULL 
+THEN
+--DBMS_OUTPUT.PUT_LINE ( SITE_ID||'   ' || TIME_REPORTED ||'   ' ||  SA_HRS||'   ' || SU_HRS||'   ' || VENDOR||'   ' || MODALITY||'   ' || WKHRS||'   ' || MF_HRS||'   ' || CHRSMF||'   ' || ROOM||'   ' || ANAME||'   ' || OEM||'   ' || DNAME||'   ' || CLINIC_AREA||'   ' || FLOOR1  );
+
+  INSERT ALL 
+INTO EAM.R5PROPERTYVALUES  (PRV_PROPERTY,PRV_RENTITY,PRV_CLASS,PRV_CODE,PRV_SEQNO,PRV_VALUE,PRV_NVALUE,PRV_DVALUE,PRV_CLASS_ORG,PRV_UPDATECOUNT,PRV_CREATED,PRV_UPDATED,PRV_NOTUSED) 
+  values ('SITEID','EVNT','*',WOCODE,1,SITE_ID,null,null,'*',0,time_reported,time_reported,'-')
+
+INTO EAM.R5PROPERTYVALUES  (PRV_PROPERTY,PRV_RENTITY,PRV_CLASS,PRV_CODE,PRV_SEQNO,PRV_VALUE,PRV_NVALUE,PRV_DVALUE,PRV_CLASS_ORG,PRV_UPDATECOUNT,PRV_CREATED,PRV_UPDATED,PRV_NOTUSED) 
+  values ('SAHRS','EVNT','*',WOCODE,1,SA_HRS,null,null,'*',0,time_reported,time_reported,'-')
+
+INTO EAM.R5PROPERTYVALUES  (PRV_PROPERTY,PRV_RENTITY,PRV_CLASS,PRV_CODE,PRV_SEQNO,PRV_VALUE,PRV_NVALUE,PRV_DVALUE,PRV_CLASS_ORG,PRV_UPDATECOUNT,PRV_CREATED,PRV_UPDATED,PRV_NOTUSED) 
+  values ('SUHRS','EVNT','*',WOCODE,1,SU_HRS,null,null,'*',0,time_reported,time_reported,'-')
+
+INTO EAM.R5PROPERTYVALUES  (PRV_PROPERTY,PRV_RENTITY,PRV_CLASS,PRV_CODE,PRV_SEQNO,PRV_VALUE,PRV_NVALUE,PRV_DVALUE,PRV_CLASS_ORG,PRV_UPDATECOUNT,PRV_CREATED,PRV_UPDATED,PRV_NOTUSED) 
+  values ('VENDOR','EVNT','*',WOCODE,1,VENDOR,null,null,'*',0,time_reported,time_reported,'-')
+
+INTO EAM.R5PROPERTYVALUES  (PRV_PROPERTY,PRV_RENTITY,PRV_CLASS,PRV_CODE,PRV_SEQNO,PRV_VALUE,PRV_NVALUE,PRV_DVALUE,PRV_CLASS_ORG,PRV_UPDATECOUNT,PRV_CREATED,PRV_UPDATED,PRV_NOTUSED) 
+  values ('MODALITY','EVNT','*',WOCODE,1,MODALITY,null,null,'*',0,time_reported,time_reported,'-')
+
+INTO EAM.R5PROPERTYVALUES  (PRV_PROPERTY,PRV_RENTITY,PRV_CLASS,PRV_CODE,PRV_SEQNO,PRV_VALUE,PRV_NVALUE,PRV_DVALUE,PRV_CLASS_ORG,PRV_UPDATECOUNT,PRV_CREATED,PRV_UPDATED,PRV_NOTUSED) 
+  values ('WKHRS','EVNT','*',WOCODE,1,WKHRS,null,null,'*',0,time_reported,time_reported,'-')
+
+INTO EAM.R5PROPERTYVALUES  (PRV_PROPERTY,PRV_RENTITY,PRV_CLASS,PRV_CODE,PRV_SEQNO,PRV_VALUE,PRV_NVALUE,PRV_DVALUE,PRV_CLASS_ORG,PRV_UPDATECOUNT,PRV_CREATED,PRV_UPDATED,PRV_NOTUSED) 
+  values ('MFHRS','EVNT','*',WOCODE,1,MF_HRS,null,null,'*',0,time_reported,time_reported,'-')
+
+INTO EAM.R5PROPERTYVALUES  (PRV_PROPERTY,PRV_RENTITY,PRV_CLASS,PRV_CODE,PRV_SEQNO,PRV_VALUE,PRV_NVALUE,PRV_DVALUE,PRV_CLASS_ORG,PRV_UPDATECOUNT,PRV_CREATED,PRV_UPDATED,PRV_NOTUSED) 
+  values ('CHRSMF','EVNT','*',WOCODE,1,CHRSMF,null,null,'*',0,time_reported,time_reported,'-')
+
+INTO EAM.R5PROPERTYVALUES  (PRV_PROPERTY,PRV_RENTITY,PRV_CLASS,PRV_CODE,PRV_SEQNO,PRV_VALUE,PRV_NVALUE,PRV_DVALUE,PRV_CLASS_ORG,PRV_UPDATECOUNT,PRV_CREATED,PRV_UPDATED,PRV_NOTUSED) 
+  values ('ROOM','EVNT','*',WOCODE,1,ROOM,null,null,'*',0,time_reported,time_reported,'-')
+
+INTO EAM.R5PROPERTYVALUES  (PRV_PROPERTY,PRV_RENTITY,PRV_CLASS,PRV_CODE,PRV_SEQNO,PRV_VALUE,PRV_NVALUE,PRV_DVALUE,PRV_CLASS_ORG,PRV_UPDATECOUNT,PRV_CREATED,PRV_UPDATED,PRV_NOTUSED) 
+  values ('ASSETNAM','EVNT','*',WOCODE,1,ANAME,null,null,'*',0,time_reported,time_reported,'-')
+
+INTO EAM.R5PROPERTYVALUES  (PRV_PROPERTY,PRV_RENTITY,PRV_CLASS,PRV_CODE,PRV_SEQNO,PRV_VALUE,PRV_NVALUE,PRV_DVALUE,PRV_CLASS_ORG,PRV_UPDATECOUNT,PRV_CREATED,PRV_UPDATED,PRV_NOTUSED) 
+  values ('OEM','EVNT','*',WOCODE,1,OEM,null,null,'*',0,time_reported,time_reported,'-')
+
+INTO EAM.R5PROPERTYVALUES  (PRV_PROPERTY,PRV_RENTITY,PRV_CLASS,PRV_CODE,PRV_SEQNO,PRV_VALUE,PRV_NVALUE,PRV_DVALUE,PRV_CLASS_ORG,PRV_UPDATECOUNT,PRV_CREATED,PRV_UPDATED,PRV_NOTUSED) 
+  values ('DOMAIN','EVNT','*',WOCODE,1,DNAME,null,null,'*',0,time_reported,time_reported,'-')
+
+INTO EAM.R5PROPERTYVALUES  (PRV_PROPERTY,PRV_RENTITY,PRV_CLASS,PRV_CODE,PRV_SEQNO,PRV_VALUE,PRV_NVALUE,PRV_DVALUE,PRV_CLASS_ORG,PRV_UPDATECOUNT,PRV_CREATED,PRV_UPDATED,PRV_NOTUSED) 
+  values ('CLINIC','EVNT','*',WOCODE,1,CLINIC_AREA,null,null,'*',0,time_reported,time_reported,'-')
+
+INTO EAM.R5PROPERTYVALUES  (PRV_PROPERTY,PRV_RENTITY,PRV_CLASS,PRV_CODE,PRV_SEQNO,PRV_VALUE,PRV_NVALUE,PRV_DVALUE,PRV_CLASS_ORG,PRV_UPDATECOUNT,PRV_CREATED,PRV_UPDATED,PRV_NOTUSED) 
+  values ('FLOOR','EVNT','*',WOCODE,1,FLOOR1,null,null,'*',0,time_reported,time_reported,'-')
+
+SELECT 1 FROM DUAL;
+
+END IF;
+EXCEPTION
+WHEN OTHERS THEN NULL;
+END;
+
+--*** FOR MISSING FLOOR AND ROOM NAME  .. USE THIS:
+-- TEST ON THIS ONE OK ... UPDATE THESE WO 59252, 62134,  ***THIS 2 DOES NOT WORK (CAN'T ADD CUSTOME FIELD) !! 61768, 61573, 
+--6/1/2016   wo 62216 , 62217
+DECLARE
+--ADD THE WO NUMBER HERE ABER THE :=
+WOCODE R5EVENTS.EVT_CODE%TYPE := '62216';
+WOOBJECT R5EVENTS.EVT_OBJECT%TYPE;
+TIME_REPORTED EAM.R5EVENTS.EVT_REPORTED%TYPE;
+
+SITE_ID 	R5OBJECTS.OBJ_MANUFACTMODEL%TYPE;
+SA_HRS 	R5OBJECTS.OBJ_VARIABLE4%TYPE;
+SU_HRS 	R5OBJECTS.OBJ_VARIABLE5%TYPE;
+VENDOR 	R5OBJECTS.OBJ_MANUFACT%TYPE;
+MODALITY 	R5OBJECTS.OBJ_CLASS%TYPE;
+WKHRS 	R5OBJECTS.OBJ_VARIABLE6%TYPE;
+MF_HRS 	R5OBJECTS.OBJ_VARIABLE3%TYPE;
+CHRSMF 	R5OBJECTS.OBJ_UDFCHAR01%TYPE;
+ROOM 			R5PROPERTYVALUES.PRV_VALUE%TYPE;
+ANAME 		R5PROPERTYVALUES.PRV_VALUE%TYPE;
+OEM 			R5PROPERTYVALUES.PRV_VALUE%TYPE;
+DNAME 		R5PROPERTYVALUES.PRV_VALUE%TYPE;
+CLINIC_AREA 	R5PROPERTYVALUES.PRV_VALUE%TYPE;
+FLOOR1 		R5PROPERTYVALUES.PRV_VALUE%TYPE;
+
+BEGIN
+--get the equipment name (EVT_OBJECT) from the R5EVENTS table given WO number
+SELECT EVT_REPORTED, EVT_OBJECT INTO TIME_REPORTED, WOOBJECT FROM R5EVENTS WHERE EVT_CODE = WOCODE;
+--get the non-custom field values
+SELECT OBJ_MANUFACTMODEL, OBJ_VARIABLE4, OBJ_VARIABLE5,  OBJ_MANUFACT, OBJ_CLASS, OBJ_VARIABLE6, OBJ_VARIABLE3, OBJ_UDFCHAR01
+	INTO SITE_ID, SA_HRS, SU_HRS, VENDOR, MODALITY, WKHRS, MF_HRS, CHRSMF FROM R5OBJECTS WHERE OBJ_CODE=WOOBJECT;
+--get the custom field value
+--****NOTE THAT ROOM AND FLOOR1 NEED TO DESELECT HERE OR IT WILL CAUSE ERROR SINCE CAN'T SELECT NULL INTO VARIALBE.
+--SELECT PRV_VALUE INTO ROOM 		FROM R5PROPERTYVALUES WHERE PRV_CODE=WOOBJECT||'#*' AND PRV_RENTITY='OBJ' AND PRV_PROPERTY='ROOMNAME';
+SELECT PRV_VALUE INTO ANAME		FROM R5PROPERTYVALUES WHERE PRV_CODE=WOOBJECT||'#*' AND PRV_RENTITY='OBJ' AND PRV_PROPERTY='ASSETNAM';
+SELECT PRV_VALUE INTO OEM			FROM R5PROPERTYVALUES WHERE PRV_CODE=WOOBJECT||'#*' AND PRV_RENTITY='OBJ' AND PRV_PROPERTY='OEM';
+SELECT PRV_VALUE INTO DNAME		FROM R5PROPERTYVALUES WHERE PRV_CODE=WOOBJECT||'#*' AND PRV_RENTITY='OBJ' AND PRV_PROPERTY='DOMAIN';
+SELECT PRV_VALUE INTO CLINIC_AREA	FROM R5PROPERTYVALUES WHERE PRV_CODE=WOOBJECT||'#*' AND PRV_RENTITY='OBJ' AND PRV_PROPERTY='CLINIC';
+--SELECT PRV_VALUE INTO FLOOR1		FROM R5PROPERTYVALUES WHERE PRV_CODE=WOOBJECT||'#*' AND PRV_RENTITY='OBJ' AND PRV_PROPERTY='FLOOR';
+
+IF 
+SITE_ID  		IS NOT NULL AND SA_HRS	IS NOT NULL AND SU_HRS  		IS NOT NULL AND VENDOR	IS NOT NULL AND MODALITY	IS NOT NULL
+AND WKHRS   	IS NOT NULL AND MF_HRS  	IS NOT NULL AND CHRSMF      	IS NOT NULL AND ANAME 	IS NOT NULL 
+AND OEM     	IS NOT NULL AND DNAME   	IS NOT NULL AND CLINIC_AREA 	IS NOT NULL  
+--AND WKHRS   	IS NOT NULL AND MF_HRS  	IS NOT NULL AND CHRSMF      	IS NOT NULL AND ROOM      	IS NOT NULL AND ANAME 	IS NOT NULL 
+--AND OEM     	IS NOT NULL AND DNAME   	IS NOT NULL AND CLINIC_AREA 	IS NOT NULL AND FLOOR1    	IS NOT NULL 
+THEN
+--DBMS_OUTPUT.PUT_LINE ( SITE_ID||'   ' || TIME_REPORTED ||'   ' ||  SA_HRS||'   ' || SU_HRS||'   ' || VENDOR||'   ' || MODALITY||'   ' || WKHRS||'   ' || MF_HRS||'   ' || CHRSMF||'   ' || ROOM||'   ' || ANAME||'   ' || OEM||'   ' || DNAME||'   ' || CLINIC_AREA||'   ' || FLOOR1  );
+
+  INSERT ALL 
+INTO EAM.R5PROPERTYVALUES  (PRV_PROPERTY,PRV_RENTITY,PRV_CLASS,PRV_CODE,PRV_SEQNO,PRV_VALUE,PRV_NVALUE,PRV_DVALUE,PRV_CLASS_ORG,PRV_UPDATECOUNT,PRV_CREATED,PRV_UPDATED,PRV_NOTUSED) 
+  values ('SITEID','EVNT','*',WOCODE,1,SITE_ID,null,null,'*',0,time_reported,time_reported,'-')
+
+INTO EAM.R5PROPERTYVALUES  (PRV_PROPERTY,PRV_RENTITY,PRV_CLASS,PRV_CODE,PRV_SEQNO,PRV_VALUE,PRV_NVALUE,PRV_DVALUE,PRV_CLASS_ORG,PRV_UPDATECOUNT,PRV_CREATED,PRV_UPDATED,PRV_NOTUSED) 
+  values ('SAHRS','EVNT','*',WOCODE,1,SA_HRS,null,null,'*',0,time_reported,time_reported,'-')
+
+INTO EAM.R5PROPERTYVALUES  (PRV_PROPERTY,PRV_RENTITY,PRV_CLASS,PRV_CODE,PRV_SEQNO,PRV_VALUE,PRV_NVALUE,PRV_DVALUE,PRV_CLASS_ORG,PRV_UPDATECOUNT,PRV_CREATED,PRV_UPDATED,PRV_NOTUSED) 
+  values ('SUHRS','EVNT','*',WOCODE,1,SU_HRS,null,null,'*',0,time_reported,time_reported,'-')
+
+INTO EAM.R5PROPERTYVALUES  (PRV_PROPERTY,PRV_RENTITY,PRV_CLASS,PRV_CODE,PRV_SEQNO,PRV_VALUE,PRV_NVALUE,PRV_DVALUE,PRV_CLASS_ORG,PRV_UPDATECOUNT,PRV_CREATED,PRV_UPDATED,PRV_NOTUSED) 
+  values ('VENDOR','EVNT','*',WOCODE,1,VENDOR,null,null,'*',0,time_reported,time_reported,'-')
+
+INTO EAM.R5PROPERTYVALUES  (PRV_PROPERTY,PRV_RENTITY,PRV_CLASS,PRV_CODE,PRV_SEQNO,PRV_VALUE,PRV_NVALUE,PRV_DVALUE,PRV_CLASS_ORG,PRV_UPDATECOUNT,PRV_CREATED,PRV_UPDATED,PRV_NOTUSED) 
+  values ('MODALITY','EVNT','*',WOCODE,1,MODALITY,null,null,'*',0,time_reported,time_reported,'-')
+
+INTO EAM.R5PROPERTYVALUES  (PRV_PROPERTY,PRV_RENTITY,PRV_CLASS,PRV_CODE,PRV_SEQNO,PRV_VALUE,PRV_NVALUE,PRV_DVALUE,PRV_CLASS_ORG,PRV_UPDATECOUNT,PRV_CREATED,PRV_UPDATED,PRV_NOTUSED) 
+  values ('WKHRS','EVNT','*',WOCODE,1,WKHRS,null,null,'*',0,time_reported,time_reported,'-')
+
+INTO EAM.R5PROPERTYVALUES  (PRV_PROPERTY,PRV_RENTITY,PRV_CLASS,PRV_CODE,PRV_SEQNO,PRV_VALUE,PRV_NVALUE,PRV_DVALUE,PRV_CLASS_ORG,PRV_UPDATECOUNT,PRV_CREATED,PRV_UPDATED,PRV_NOTUSED) 
+  values ('MFHRS','EVNT','*',WOCODE,1,MF_HRS,null,null,'*',0,time_reported,time_reported,'-')
+
+INTO EAM.R5PROPERTYVALUES  (PRV_PROPERTY,PRV_RENTITY,PRV_CLASS,PRV_CODE,PRV_SEQNO,PRV_VALUE,PRV_NVALUE,PRV_DVALUE,PRV_CLASS_ORG,PRV_UPDATECOUNT,PRV_CREATED,PRV_UPDATED,PRV_NOTUSED) 
+  values ('CHRSMF','EVNT','*',WOCODE,1,CHRSMF,null,null,'*',0,time_reported,time_reported,'-')
+
+--INTO EAM.R5PROPERTYVALUES  (PRV_PROPERTY,PRV_RENTITY,PRV_CLASS,PRV_CODE,PRV_SEQNO,PRV_VALUE,PRV_NVALUE,PRV_DVALUE,PRV_CLASS_ORG,PRV_UPDATECOUNT,PRV_CREATED,PRV_UPDATED,PRV_NOTUSED) 
+--  values ('ROOM','EVNT','*',WOCODE,1,ROOM,null,null,'*',0,time_reported,time_reported,'-')
+
+INTO EAM.R5PROPERTYVALUES  (PRV_PROPERTY,PRV_RENTITY,PRV_CLASS,PRV_CODE,PRV_SEQNO,PRV_VALUE,PRV_NVALUE,PRV_DVALUE,PRV_CLASS_ORG,PRV_UPDATECOUNT,PRV_CREATED,PRV_UPDATED,PRV_NOTUSED) 
+  values ('ASSETNAM','EVNT','*',WOCODE,1,ANAME,null,null,'*',0,time_reported,time_reported,'-')
+
+INTO EAM.R5PROPERTYVALUES  (PRV_PROPERTY,PRV_RENTITY,PRV_CLASS,PRV_CODE,PRV_SEQNO,PRV_VALUE,PRV_NVALUE,PRV_DVALUE,PRV_CLASS_ORG,PRV_UPDATECOUNT,PRV_CREATED,PRV_UPDATED,PRV_NOTUSED) 
+  values ('OEM','EVNT','*',WOCODE,1,OEM,null,null,'*',0,time_reported,time_reported,'-')
+
+INTO EAM.R5PROPERTYVALUES  (PRV_PROPERTY,PRV_RENTITY,PRV_CLASS,PRV_CODE,PRV_SEQNO,PRV_VALUE,PRV_NVALUE,PRV_DVALUE,PRV_CLASS_ORG,PRV_UPDATECOUNT,PRV_CREATED,PRV_UPDATED,PRV_NOTUSED) 
+  values ('DOMAIN','EVNT','*',WOCODE,1,DNAME,null,null,'*',0,time_reported,time_reported,'-')
+
+INTO EAM.R5PROPERTYVALUES  (PRV_PROPERTY,PRV_RENTITY,PRV_CLASS,PRV_CODE,PRV_SEQNO,PRV_VALUE,PRV_NVALUE,PRV_DVALUE,PRV_CLASS_ORG,PRV_UPDATECOUNT,PRV_CREATED,PRV_UPDATED,PRV_NOTUSED) 
+  values ('CLINIC','EVNT','*',WOCODE,1,CLINIC_AREA,null,null,'*',0,time_reported,time_reported,'-')
+
+--INTO EAM.R5PROPERTYVALUES  (PRV_PROPERTY,PRV_RENTITY,PRV_CLASS,PRV_CODE,PRV_SEQNO,PRV_VALUE,PRV_NVALUE,PRV_DVALUE,PRV_CLASS_ORG,PRV_UPDATECOUNT,PRV_CREATED,PRV_UPDATED,PRV_NOTUSED) 
+--  values ('FLOOR','EVNT','*',WOCODE,1,FLOOR1,null,null,'*',0,time_reported,time_reported,'-')
+
+SELECT 1 FROM DUAL;
+
+END IF;
+EXCEPTION
+WHEN OTHERS THEN NULL;
+END;
+
+--*********************************
+
+SELECT 
+O.OBJ_CODE Equipment,
+O.OBJ_CODE,
+SQL_142.prv_value ASSET_NAME,
+obj_manufactmodel SiteID,
+o.obj_class Modality,
+o.obj_manufact Service_Vendor,
+SQL_160.prv_value OEM,
+SQL_147.prv_value DOMAIN,
+SQL_161.prv_value CLINIC_AREA,
+SQL_163.prv_value FLOOR,
+SQL_139.prv_value ROMENAME,
+O.OBJ_VARIABLE3 MF_Hrs_of_Ops,
+OBJ_VARIABLE4 SA_Hrs_of_Ops,
+OBJ_VARIABLE5 SU_Hrs_of_Ops,
+OBJ_VARIABLE6 WK_Hrs_of_Ops,
+OBJ_UDFCHAR01 C_Hrs_MF
+FROM r5objects o, 
+r5propertyvalues SQL_139, r5propertyvalues SQL_147, r5propertyvalues SQL_142, r5propertyvalues SQL_160, r5propertyvalues SQL_161, r5propertyvalues SQL_163
+WHERE
+obj_code||'#'||obj_org=SQL_147.prv_code(+) and (SQL_147.prv_rentity(+) = 'OBJ') and (SQL_147.prv_property(+)='DOMAIN') and 
+obj_code||'#'||obj_org=SQL_139.prv_code(+) and (SQL_139.prv_rentity(+) = 'OBJ') and (SQL_139.prv_property(+)='ROOMNAME') and 
+obj_code||'#'||obj_org=SQL_160.prv_code(+) and (SQL_160.prv_rentity(+) = 'OBJ') and (SQL_160.prv_property(+)='OEM') and 
+obj_code||'#'||obj_org=SQL_142.prv_code(+) and (SQL_142.prv_rentity(+) = 'OBJ') and (SQL_142.prv_property(+)='ASSETNAM') and
+obj_code||'#'||obj_org=SQL_161.prv_code(+) and (SQL_161.prv_rentity(+) = 'OBJ') and (SQL_161.prv_property(+)='CLINIC') and 
+obj_code||'#'||obj_org=SQL_163.prv_code(+) and (SQL_163.prv_rentity(+) = 'OBJ') and (SQL_163.prv_property(+)='FLOOR') AND
+OBJ_CODE IN (SELECT EVT_OBJECT FROM R5EVENTS WHERE EVT_RTYPE IN ( 'JOB', 'PPM') AND (EVT_CODE = 59252 OR EVT_CODE = 62134))
+;
+
+--*** CHECK THE WO INFORMATION BEFORE ADDING MISSING VARIABLE:
+SELECT *
+FROM EAM.R5PROPERTYVALUES
+--WHERE PRV_CODE = '61276' AND PRV_RENTITY = 'EVNT' AND
+--WHERE PRV_CODE = '62217' AND PRV_RENTITY = 'EVNT' AND
+WHERE PRV_CODE = '62216' AND PRV_RENTITY = 'EVNT' AND
+(PRV_PROPERTY = 'SITEID' OR
+PRV_PROPERTY = 'SAHRS' OR
+PRV_PROPERTY = 'SUHRS' OR
+PRV_PROPERTY = 'VENDOR' OR
+PRV_PROPERTY = 'MODALITY' OR
+PRV_PROPERTY = 'WKHRS' OR
+PRV_PROPERTY = 'MFHRS' OR
+PRV_PROPERTY = 'CHRSMF' OR
+PRV_PROPERTY = 'ROOM' OR
+PRV_PROPERTY = 'ASSETNAM' OR
+PRV_PROPERTY = 'OEM' OR
+PRV_PROPERTY = 'DOMAIN' OR
+PRV_PROPERTY = 'CLINIC' OR
+PRV_PROPERTY = 'FLOOR')
+;
+
+
+
+--wolfgang update to replace values in the path
+--view statement
+SELECT * FROM redmine_default.external_files where study_id = '57' 
+and path like '%/WHCT2_%' and path not like '%/WHCT2/WHCT2_%'
+--update statement
+UPDATE redmine_default.external_files  
+SET path = REPLACE(path,'/WHCT2_','/WHCT2/WHCT2_')     
+WHERE study_id = '57' 
+and path like '%/WHCT2_%' and path not like '%/WHCT2/WHCT2_%';  
+
+--select statement to get those WOs whos building is BELL before making those change
+SELECT A.EVT_CODE
+FROM EAM.R5EVENTS A 
+WHERE EVT_MRC = 'BELL' and EVT_DATE > '01-JAN-12' and evt_type in ('JOB','PPM');
+
+
+--************* i used this TO UPDATE THE BUILDING NAME FROM BELL TO BELLAIRE ****
+DECLARE
+  --i NUMBER := 1;
+  workorder EAM.R5EVENTS.EVT_CODE%TYPE;
+  building EAM.R5EVENTS.EVT_MRC%TYPE := 'BELLAIRE';
+BEGIN
+  FOR item IN (
+	SELECT A.EVT_CODE
+	FROM EAM.R5EVENTS A 
+	WHERE EVT_MRC = 'BELL' and EVT_DATE > '01-JAN-12' and evt_type in ('JOB','PPM')
+  ) 
+  LOOP
+  --DBMS_OUTPUT.PUT_LINE ('item: ' || i || ':  ' || item.EVT_CODE);
+  SELECT EVT_CODE INTO workorder FROM EAM.R5EVENTS WHERE EVT_CODE = item.EVT_CODE;
+  --DBMS_OUTPUT.PUT_LINE (time_reported);
+  --DBMS_OUTPUT.PUT_LINE (workorder ||'  ' ||building);
+  --UPDATE STATEMENT HERE 
+  UPDATE EAM.R5EVENTS
+  SET EVT_MRC = building
+  WHERE EVT_CODE = workorder;
+
+  --i:= i+1;
+  END LOOP;
+END;
+
+
+--***select WO for specific siteID,asset**
+
+select 
+e.evt_code WO,
+--SQL_109.prv_value Site_ID,
+--O.OBJ_MANUFACTMODEL SITE_ID_ASSETS,
+O.OBJ_MANUFACTMODEL SITE_ID,
+--to_char(sysdate, 'Dy DD-Mon-YYYY HH24:MI:SS')
+to_char(EVT_REPORTED, 'MM/DD/YYYY HH24:MI:SS')Date_service_opened,
+to_char(E.EVT_COMPLETED, 'MM/DD/YYYY HH24:MI:SS')Date_service_closed,
+E.EVT_DESC Problem_Description, 
+AD.ADD_TEXT Work_Performed,
+--EVT_REPORTED Date_Reported,
+--E.EVT_COMPLETED Date_Completed,
+--EVT_TARGET TARGET,
+
+O.OBJ_CODE Equipment,
+
+O.OBJ_CLASS Modality,
+
+
+SQL_49.prv_value AssetName,
+
+
+r5o7.o7get_desc('EN','UCOD', e.evt_status,'EVST', '') WO_STATUS, 
+EVT_MRC Building,
+O.OBJ_CODE,
+O.OBJ_COSTCODE Cost_Center, 
+O.OBJ_CLASS Modalit,
+
+
+--down time 
+E.EVT_DOWNTIMEHRS System_Hard_Down_Hrs_Ops,
+
+--pm or and stuff
+r5o7.o7get_desc('EN','UCOD', e.evt_jobtype,'JBTP', '') Event
+
+
+--r5o7.o7get_desc('EN','UCOD', o.obj_status,'OBST', '') Asset_Status
+from r5events e, r5activities a, r5objects o, r5addetails ad,
+   r5propertyvalues SQL_41, r5propertyvalues SQL_51, r5propertyvalues SQL_65, r5propertyvalues SQL_49, r5propertyvalues SQL_48 , r5propertyvalues SQL_139, r5propertyvalues SQL_109 
+
+where
+e.evt_rstatus IN ('Q', 'R', 'C') 
+AND        e.evt_rtype IN ('JOB', 'PPM')
+ 
+AND e.evt_code = a.act_event (+)
+AND e.evt_object = o.obj_code(+)
+AND e.evt_object_org = o.obj_org(+)
+AND       (a.act_act is null or a.act_act=(select min(b.act_act) from r5activities b where b.act_event=a.act_event) )
+   
+AND AD.ADD_LINE(+) = A.act_act AND a.act_event || '#10' = AD.ADD_CODE(+)
+          AND E.EVT_STATUS <> 'A'
+          --AND E.EVT_STATUS <> 'REJ'              
+          --AND E.EVT_STATUS <> 'RJDD'
+
+and evt_code=SQL_41.prv_code(+) and  (SQL_41.prv_rentity(+) = 'EVNT') and (SQL_41.prv_property(+)='MODALITY')
+and (evt_code=SQL_48.prv_code(+) and SQL_48.prv_rentity(+) = 'EVNT') and (SQL_48.prv_property(+)='ASSETNAM')
+and obj_code||'#'||obj_org=SQL_49.prv_code(+) and (SQL_49.prv_rentity(+) = 'OBJ') and (SQL_49.prv_property(+)='ASSETNAM')
+AND obj_code||'#'||obj_org=SQL_139.prv_code(+) and (SQL_139.prv_rentity(+) = 'OBJ') and (SQL_139.prv_property(+)='ROOMNAME') 
+and evt_code=SQL_109.prv_code(+) and (SQL_109.prv_rentity(+) = 'EVNT') and (SQL_109.prv_property(+)='SITEID')
+
+and evt_code=SQL_51.prv_code(+) and (SQL_51.prv_rentity(+) = 'EVNT') and (SQL_51.prv_property(+)='WOTYPE')
+and evt_code=SQL_65.prv_code(+) and (SQL_65.prv_rentity(+) = 'EVNT') and (SQL_65.prv_property(+)='SVCHRS')
+--modality is 'MRI'
+and O.OBJ_MANUFACTMODEL = '713794DC4'
+--and O.OBJ_CODE = 'XRAY-GE-XQI-07'
+--and O.OBJ_CLASS = 'MRI'
+--event_report alway has value null = empty
+--and EVT_REPORTED is null
+--group by SQL_49.prv_value
+and r5o7.o7get_desc('EN','UCOD', o.obj_status,'OBST', '') != 'Retired'
+and r5o7.o7get_desc('EN','UCOD', e.evt_status,'EVST', '')<>'Rejected due to duplication'
+--AND (trunc(EVT_REPORTED) >= TO_DATE('14-NOV-01', 'YY-MON-DD'))
+
+--1-1-2006 until 12-31-2011
+AND (trunc(EVT_REPORTED) >= TO_DATE('06-JAN-01', 'YY-MON-DD') AND trunc(EVT_REPORTED) <= TO_DATE('11-DEC-31', 'YY-MON-DD'))
+--AND (trunc(EVT_REPORTED) >= TO_DATE('14-NOV-01', 'YY-MON-DD') AND trunc(EVT_REPORTED) <= TO_DATE('15-OCT-31', 'YY-MON-DD'))
+order by EVT_REPORTED desc
+;
+
+
+
+-- No sideID
+--WO / equipment   61470  WS-GE-AW-41
+--note (may cause problem): this assets does not has  *MF: HRs of Ops, *SA: HRs of Ops, *SU: HRs of Ops
+--flexsql post insert the following: SiteID, Service Vendor, Modality, Room Name, Asset Name, OEM, Domain, clinic/area, Floor, 
+--next flexsql: New WO, WK Hrs,  MF Hrs, , SA Hrs, Su Hrs <-- seem like these missing infor is the problem
+need to fill out:
+SiteID
+AssetName
+Modality
+Service Vendor
+OEM
+Floor 
+Clinic Area
+Domain
+Reported by
+Contact Phone #
+*MF: HRs of Ops
+*SA: HRs of Ops
+*SU: HRs of Ops
+*Issue
+*WO type
+*WK: HRs of Ops
+*C-Hrs (M-F)
+
+--****
+--*****SELECT WO for specific cases
+
+
+ select 
+e.evt_code WO,
+EVT_REPORTED Date_Reported,
+EVT_TARGET TARGET,
+
+O.OBJ_CODE Equipment,
+O.OBJ_MANUFACTMODEL SITE_ID_ASSETS,
+o.obj_manufact Service_Vendor,
+O.OBJ_CLASS Modality,
+SQL_139.prv_value ROOM_NAME,
+
+
+--SAT HRS
+O.OBJ_VARIABLE4 SAT_Hrs,
+--SAN HRS
+O.OBJ_VARIABLE5 SUN_Hrs,
+--asset name from object
+SQL_49.prv_value AssetName,
+--wo asset name
+SQL_48.prv_value Asset_Name_wo, 
+
+r5o7.o7get_desc('EN','UCOD', e.evt_status,'EVST', '') WO_STATUS, 
+EVT_MRC Building,
+O.OBJ_CODE,
+O.OBJ_COSTCODE Cost_Center, 
+
+SQL_41.prv_value Modality_WO,
+SQL_65.PRV_VALUE VEN_Total_Labor_Hrs,
+--down time 
+E.EVT_DOWNTIMEHRS System_Hard_Down_Hrs_Ops,
+--planned or unplanned
+SQL_51.prv_value WO_Type, 
+--pm or and stuff
+r5o7.o7get_desc('EN','UCOD', e.evt_jobtype,'JBTP', '') Event,
+--wo asset name
+SQL_48.prv_value Asset_Name, 
+
+
+r5o7.o7get_desc('EN','UCOD', o.obj_status,'OBST', '') Asset_Status
+from r5events e, r5activities a, r5objects o, r5addetails ad,
+   r5propertyvalues SQL_41, r5propertyvalues SQL_51, r5propertyvalues SQL_65, r5propertyvalues SQL_49, r5propertyvalues SQL_48 , r5propertyvalues SQL_139 
+
+where
+e.evt_rstatus IN ('Q', 'R', 'C') 
+AND        e.evt_rtype IN ('JOB', 'PPM')
+ 
+AND e.evt_code = a.act_event (+)
+AND e.evt_object = o.obj_code(+)
+AND e.evt_object_org = o.obj_org(+)
+AND       (a.act_act is null or a.act_act=(select min(b.act_act) from r5activities b where b.act_event=a.act_event) )
+   
+AND AD.ADD_LINE(+) = A.act_act AND a.act_event || '#10' = AD.ADD_CODE(+)
+          AND E.EVT_STATUS <> 'A'
+          --AND E.EVT_STATUS <> 'REJ'              
+          --AND E.EVT_STATUS <> 'RJDD'
+
+and evt_code=SQL_41.prv_code(+) and  (SQL_41.prv_rentity(+) = 'EVNT') and (SQL_41.prv_property(+)='MODALITY')
+and (evt_code=SQL_48.prv_code(+) and SQL_48.prv_rentity(+) = 'EVNT') and (SQL_48.prv_property(+)='ASSETNAM')
+and obj_code||'#'||obj_org=SQL_49.prv_code(+) and (SQL_49.prv_rentity(+) = 'OBJ') and (SQL_49.prv_property(+)='ASSETNAM')
+AND obj_code||'#'||obj_org=SQL_139.prv_code(+) and (SQL_139.prv_rentity(+) = 'OBJ') and (SQL_139.prv_property(+)='ROOMNAME') 
+
+and evt_code=SQL_51.prv_code(+) and (SQL_51.prv_rentity(+) = 'EVNT') and (SQL_51.prv_property(+)='WOTYPE')
+and evt_code=SQL_65.prv_code(+) and (SQL_65.prv_rentity(+) = 'EVNT') and (SQL_65.prv_property(+)='SVCHRS')
+--modality is 'MRI'
+and O.OBJ_CODE = 'XRAY-GE-XQI-07'
+--and O.OBJ_CLASS = 'MRI'
+--event_report alway has value null = empty
+--and EVT_REPORTED is null
+--group by SQL_49.prv_value
+and r5o7.o7get_desc('EN','UCOD', o.obj_status,'OBST', '') != 'Retired'
+AND (trunc(EVT_REPORTED) >= TO_DATE('14-NOV-01', 'YY-MON-DD'))
+--AND (trunc(EVT_REPORTED) >= TO_DATE('14-NOV-01', 'YY-MON-DD') AND trunc(EVT_REPORTED) <= TO_DATE('15-OCT-31', 'YY-MON-DD'))
+order by EVT_REPORTED desc
+;
+
+
+--*****
+--update the DateReported by eUpdate Start time 
+-- check all 3
+		SELECT  P.PRV_CODE, P.PRV_DVALUE
+		FROM EAM.R5PROPERTYVALUES P
+		JOIN EAM.R5EVENTS EVT
+		ON P.PRV_CODE = EVT.EVT_CODE AND P.PRV_PROPERTY = 'EUPDATE' AND P.PRV_DVALUE IS NOT NULL AND TO_CHAR(P.prv_dvalue, 'hh24:mi') != '00:00' AND P.prv_dvalue != EVT.EVT_REPORTED 
+    AND (EVT.EVT_JOBTYPE = 'FMI' or EVT.EVT_JOBTYPE = 'PM' or EVT.EVT_JOBTYPE = 'Upgrade' )
+		ORDER BY PRV_DVALUE DESC
+
+--routine
+DECLARE
+  --i NUMBER := 1;
+  workorder EAM.R5EVENTS.EVT_CODE%TYPE;
+  eupdate EAM.R5PROPERTYVALUES.PRV_DVALUE%TYPE;
+BEGIN
+  FOR item IN (
+		SELECT  P.PRV_CODE, P.PRV_DVALUE
+		FROM EAM.R5PROPERTYVALUES P
+		JOIN EAM.R5EVENTS EVT
+		ON P.PRV_CODE = EVT.EVT_CODE AND P.PRV_PROPERTY = 'EUPDATE' AND P.PRV_DVALUE IS NOT NULL AND TO_CHAR(P.prv_dvalue, 'hh24:mi') != '00:00' AND P.prv_dvalue != EVT.EVT_REPORTED 
+    AND (EVT.EVT_JOBTYPE = 'FMI' or EVT.EVT_JOBTYPE = 'PM' or EVT.EVT_JOBTYPE = 'Upgrade' )
+		ORDER BY PRV_DVALUE DESC
+  ) 
+  LOOP
+  --DBMS_OUTPUT.PUT_LINE ('item: ' || i || ':  ' || item.EVT_CODE);
+  SELECT EVT_CODE INTO workorder FROM EAM.R5EVENTS WHERE EVT_CODE = item.PRV_CODE;
+  SELECT PRV_DVALUE INTO eupdate FROM EAM.R5PROPERTYVALUES WHERE PRV_CODE = item.PRV_CODE AND PRV_PROPERTY = 'EUPDATE';
+  --DBMS_OUTPUT.PUT_LINE (time_reported);
+  --DBMS_OUTPUT.PUT_LINE ('WO are:  ' ||workorder ||'  eupdate = ' || TO_CHAR(eupdate, 'yyyy/mm/dd hh24:mi') );
+  --DBMS_OUTPUT.PUT_LINE (workorder ||'  ' ||time_reported);
+  UPDATE EAM.R5EVENTS
+  SET EVT_REPORTED = eupdate
+  WHERE EVT_CODE = workorder;
+  --i:= i+1;
+  END LOOP;
+END;
+
+
+--Update the weekly operating hrs for WestHouston building
+DECLARE
+  --i NUMBER := 1;
+  workorder EAM.R5EVENTS.EVT_CODE%TYPE;
+  time_reported EAM.R5EVENTS.EVT_DATE%TYPE;
+BEGIN
+  FOR item IN (
+  SELECT  A.EVT_CODE FROM EAM.R5EVENTS A WHERE A.EVT_CODE NOT IN (
+	SELECT A.EVT_CODE FROM EAM.R5EVENTS A
+	JOIN EAM.R5PROPERTYVALUES B
+	ON A.EVT_CODE = B.PRV_CODE
+	WHERE EVT_COSTCODE = 'WHIC'
+	AND B.PRV_PROPERTY = 'WKHRS')
+	AND A.EVT_COSTCODE = 'WHIC'
+	ORDER BY A.EVT_CODE DESC
+  ) 
+  LOOP
+  --DBMS_OUTPUT.PUT_LINE ('item: ' || i || ':  ' || item.EVT_CODE);
+  SELECT EVT_DATE, EVT_CODE INTO time_reported, workorder FROM EAM.R5EVENTS WHERE EVT_CODE = item.EVT_CODE;
+  --DBMS_OUTPUT.PUT_LINE (time_reported);
+  --DBMS_OUTPUT.PUT_LINE (workorder ||'  ' ||time_reported);
+  Insert into EAM.R5PROPERTYVALUES  (PRV_PROPERTY,PRV_RENTITY,PRV_CLASS,PRV_CODE,PRV_SEQNO,PRV_VALUE,PRV_NVALUE,PRV_DVALUE,PRV_CLASS_ORG,PRV_UPDATECOUNT,PRV_CREATED,PRV_UPDATED,PRV_NOTUSED) 
+  values ('WKHRS','EVNT','*',workorder,1,'60',null,null,'*',0,time_reported,time_reported,'-');
+  --i:= i+1;
+  END LOOP;
+END;
+
+--update statemetn for individual
+-- update statement
+UPDATE EAM.R5PROPERTYVALUES
+SET PRV_VALUE = '50'
+WHERE PRV_CODE = '56778' AND PRV_PROPERTY = 'WKHRS'
